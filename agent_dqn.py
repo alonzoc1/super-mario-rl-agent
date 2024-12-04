@@ -139,20 +139,16 @@ class AgentDQN:
                 if batch is None:
                     continue
 
-                states, actions, rewards, next_states, dones = batch
+                states, actions, rewards, next_states, dones, indices, weights = batch
 
-                # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-                # columns of actions taken
+                # Compute TD error
                 current_q_values = self.online_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-
-                # Compute V(s_{t+1}) for all next states.
                 next_q_values = self.target_net(next_states).max(1)[0]
-
-                # Compute the expected Q values
                 expected_q_values = (next_q_values * self.gamma) * (~dones) + rewards
+                td_error = torch.abs(current_q_values - expected_q_values).detach().cpu().numpy()
 
-                # Compute Huber loss
-                loss = F.smooth_l1_loss(current_q_values, expected_q_values)
+                # Compute loss with IS weights
+                loss = (weights * F.smooth_l1_loss(current_q_values, expected_q_values, reduction='none')).mean()
 
                 # Optimize the model
                 self.optimizer.zero_grad()
@@ -160,6 +156,9 @@ class AgentDQN:
                 for param in self.online_net.parameters():
                     param.grad.data.clamp_(-1, 1)
                 self.optimizer.step()
+
+                # Update priorities
+                self.memory.update_priorities(indices, td_error)
 
                 # Decay epsilon
                 self.epsilon = max(self.epsilon_min, self.epsilon - (self.epsilon_start - self.epsilon_min) / self.decay)
