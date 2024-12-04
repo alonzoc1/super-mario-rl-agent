@@ -7,6 +7,7 @@ from collections import deque
 import random
 import matplotlib.pyplot as plt
 import dqn_model
+import prioritized_replay_buffer
 
 GRAPH_PATH = './graphs/'
 
@@ -30,7 +31,9 @@ class AgentDQN:
         self.update_target_every = 10000
         
         # Replay buffer
-        self.memory = deque(maxlen=self.replay_buffer_size)
+        # self.memory = deque(maxlen=self.replay_buffer_size)
+        # Try prioritized replay buffer
+        self.memory = prioritized_replay_buffer.PrioritizedReplayBuffer(self.replay_buffer_size)
         
         # Device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -69,7 +72,8 @@ class AgentDQN:
 
     def push(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
-        
+    
+    '''
     def replay_buffer(self):
         if (len(self.memory) < self.train_start):
             return None
@@ -85,6 +89,22 @@ class AgentDQN:
         dones = torch.BoolTensor(dones).to(self.device)
 
         return states, actions, rewards, next_states, dones
+    '''
+    
+    def replay_buffer(self, beta=0.4):
+        if len(self.memory.memory) < self.train_start:
+            return None
+        transitions, indices, weights = self.memory.sample(self.batch_size, beta)
+        states, actions, rewards, next_states, dones = zip(*transitions)
+        
+        states = torch.FloatTensor(np.stack(states)).to(self.device)
+        next_states = torch.FloatTensor(np.stack(next_states)).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        dones = torch.BoolTensor(dones).to(self.device)
+        weights = torch.FloatTensor(weights).to(self.device)
+        
+        return states, actions, rewards, next_states, dones, indices, weights
 
     def train(self, iterations):
         state, _ = self.env.reset()
