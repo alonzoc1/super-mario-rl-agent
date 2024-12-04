@@ -22,7 +22,7 @@ class AgentDQN:
         self.gamma = .9
         self.epsilon_start = 1.0
         self.epsilon = self.epsilon_start
-        self.decay = .999999
+        self.decay = .999995
         self.epsilon_min = .1
         self.batch_size = 32
         self.replay_buffer_size = 100000
