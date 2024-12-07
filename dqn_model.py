@@ -19,3 +19,35 @@ class DQN(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
+
+class DuelingDQN(nn.Module):
+    def __init__(self, in_channels, num_actions):
+        super(DuelingDQN, self).__init__()
+        # Shared layers
+        self.feature = nn.Sequential(
+            nn.Conv2d(in_channels, 32, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU()
+        )
+        # Value stream
+        self.value_stream = nn.Sequential(
+            nn.Linear(64 * 21 * 21, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1)
+        )
+        # Advantage stream
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(64 * 21 * 21, 512),
+            nn.ReLU(),
+            nn.Linear(512, num_actions)
+        )
+
+    def forward(self, x):
+        x = self.feature(x)
+        x = x.view(x.size(0), -1)
+        value = self.value_stream(x)
+        advantage = self.advantage_stream(x)
+        return value + advantage - advantage.mean()

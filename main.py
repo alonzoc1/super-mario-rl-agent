@@ -13,7 +13,7 @@ import frame_skipper
 import agent_dqn
 
 TEST_EPISODES = 10 # How many episodes to go through when testing
-MAX_ITER = 50000 # Max iterations when training
+MAX_ITER = 11000 # Max iterations when training
 MODEL_PATH = './models/'
 VIDEO_PATH = './test_videos/'
 GRAPH_PATH = './graphs/'
@@ -86,8 +86,11 @@ def run(args, env):
         vid_path = VIDEO_PATH + 'video_' + time_now_str + '.mp4'
         test(args, env, vid_path, agent, time_now)
     elif (args.train):
-        model = MODEL_PATH + 'model_' + time_now_str + '.pth'
-        agent = agent_dqn.AgentDQN(env, args, model, time_now)
+        continue_training = False
+        if (args.model):
+            continue_training = True
+        model = MODEL_PATH + ('model_' + time_now_str + '.pth' if args.model is None else args.model)
+        agent = agent_dqn.AgentDQN(env, args, model, time_now, continue_training)
         agent.train(MAX_ITER)
     else:
         print("No action provided, exiting...")

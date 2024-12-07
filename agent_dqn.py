@@ -7,11 +7,12 @@ from collections import deque
 import random
 import matplotlib.pyplot as plt
 import dqn_model
+import prioritized_replay_buffer
 
 GRAPH_PATH = './graphs/'
 
 class AgentDQN:
-    def __init__(self, env, args, model_path, time_now):
+    def __init__(self, env, args, model_path, time_now, continue_training):
         self.env = env
         self.num_actions = env.action_space.n
         self.model_path = model_path
@@ -22,7 +23,7 @@ class AgentDQN:
         self.gamma = .9
         self.epsilon_start = 1.0
         self.epsilon = self.epsilon_start
-        self.decay = .999995
+        self.decay = .99999
         self.epsilon_min = .1
         self.batch_size = 32
         self.replay_buffer_size = 100000
@@ -30,23 +31,59 @@ class AgentDQN:
         self.update_target_every = 10000
         
         # Replay buffer
-        self.memory = deque(maxlen=self.replay_buffer_size)
+        # self.memory = deque(maxlen=self.replay_buffer_size)
+        # Try prioritized replay buffer
+        self.memory = prioritized_replay_buffer.PrioritizedReplayBuffer(self.replay_buffer_size)
         
         # Device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Networks
-        self.online_net = dqn_model.DQN(in_channels=4, num_actions=self.num_actions).to(self.device)
-        self.target_net = dqn_model.DQN(in_channels=4, num_actions=self.num_actions).to(self.device)
+        self.online_net = dqn_model.DuelingDQN(in_channels=4, num_actions=self.num_actions).to(self.device)
+        self.target_net = dqn_model.DuelingDQN(in_channels=4, num_actions=self.num_actions).to(self.device)
         self.target_net.load_state_dict(self.online_net.state_dict())
         self.target_net.eval()
         
         # Optimizer
         self.optimizer = optim.Adam(self.online_net.parameters(), lr=self.learning_rate)
         
+        if args.model is not None and continue_training:
+            print("Loading existing model:", self.model_path)
+            checkpoint = torch.load(model_path)
+            self.online_net.load_state_dict(checkpoint['online_net'])
+            self.target_net.load_state_dict(checkpoint['target_net'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.epsilon = checkpoint.get('epsilon', self.epsilon_start)
+            
+            # Load graphing data
+            self.episode_rewards = checkpoint.get('rewards', [])
+            self.avg_rewards = checkpoint.get('avg_rewards', [])
+            self.losses = checkpoint.get('losses', [])
+            self.q_values = checkpoint.get('q_values', [])
+            self.time_str = checkpoint.get('chart_time', self.time_str)
+            print("Model loaded successfully!")
+        else:
+            # Initialize variables for graphing
+            self.episode_rewards = [] # store rewards for graph
+            self.avg_rewards = [] # store average rewards over time
+            self.losses = []
+            self.q_values = []
+
         if args.test:
-            print("Loading model")
-            self.online_net.load_state_dict(torch.load(self.model_path))
+            print("Loading existing model:", self.model_path)
+            checkpoint = torch.load(model_path)
+            self.online_net.load_state_dict(checkpoint['online_net'])
+            self.target_net.load_state_dict(checkpoint['target_net'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.epsilon = checkpoint.get('epsilon', self.epsilon_start)
+            
+            # Load graphing data
+            self.episode_rewards = checkpoint.get('rewards', [])
+            self.avg_rewards = checkpoint.get('avg_rewards', [])
+            self.losses = checkpoint.get('losses', [])
+            self.q_values = checkpoint.get('q_values', [])
+            self.time_str = checkpoint.get('chart_time', self.time_str)
+            print("Model loaded successfully!")
             self.online_net.eval()
     
     def take_action(self, observation, test=True):
@@ -68,8 +105,9 @@ class AgentDQN:
         return action
 
     def push(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-        
+        self.memory.add((state, action, reward, next_state, done))
+    
+    '''
     def replay_buffer(self):
         if (len(self.memory) < self.train_start):
             return None
@@ -85,17 +123,34 @@ class AgentDQN:
         dones = torch.BoolTensor(dones).to(self.device)
 
         return states, actions, rewards, next_states, dones
+    '''
+    
+    def replay_buffer(self, beta=0.4):
+        if len(self.memory.memory) < self.train_start:
+            return None
+        transitions, indices, weights = self.memory.sample(self.batch_size, beta)
+        states, actions, rewards, next_states, dones = zip(*transitions)
+        
+        states = torch.FloatTensor(np.stack(states)).to(self.device)
+        next_states = torch.FloatTensor(np.stack(next_states)).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        dones = torch.BoolTensor(dones).to(self.device)
+        weights = torch.FloatTensor(weights).to(self.device)
+        
+        return states, actions, rewards, next_states, dones, indices, weights
 
     def train(self, iterations):
         state, _ = self.env.reset()
         score = 0
         episode = 0
-        episode_rewards = [] # store rewards for graph
-        avg_rewards = [] # store average rewards over time
+        looper = iterations
+        counter = 0
 
-        for t in range(iterations):
+        while(looper > 0):
+            looper -= 1
             action = self.take_action(state, test=False)
-            print("Training iteration: " + str(t + 1))
+            print("Training iteration: " + str(counter + 1))
             next_state, reward, terminated, truncated, _ = self.env.step(action)
             score += reward
             self.push(state, action, reward, next_state, terminated or truncated)
@@ -103,36 +158,40 @@ class AgentDQN:
 
             if terminated or truncated:
                 episode += 1
-                episode_rewards.append(score)
-                avg_rewards.append(np.mean(episode_rewards[-100:])) # avg last 100 episodes
+                self.episode_rewards.append(score)
+                self.avg_rewards.append(np.mean(self.episode_rewards[-100:])) # avg last 100 episodes
                 print("Episode:", episode, "Score:", score, "Epsilon:", self.epsilon)
                 state, _ = self.env.reset()
                 score = 0
                 if episode % 10 == 0: # update graph every 10
-                    self.plot_rewards(episode_rewards, avg_rewards, self.time_str)
-
-            if t % self.update_target_every == 0:
+                    self.plot_rewards(self.episode_rewards, self.avg_rewards, self.time_str)
+                    self.plot_loss(self.losses, self.time_str)
+                    self.plot_q_values(self.q_values, self.time_str)
+            elif (looper == 0):
+                looper += 1 # Finish the current episode
+            if counter % self.update_target_every == 0:
                 self.target_net.load_state_dict(self.online_net.state_dict())
 
-            if t > self.train_start:
+            if counter > self.train_start:
                 batch = self.replay_buffer()
                 if batch is None:
                     continue
 
-                states, actions, rewards, next_states, dones = batch
+                states, actions, rewards, next_states, dones, indices, weights = batch
 
-                # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-                # columns of actions taken
+                # Compute TD error
                 current_q_values = self.online_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-
-                # Compute V(s_{t+1}) for all next states.
-                next_q_values = self.target_net(next_states).max(1)[0]
-
-                # Compute the expected Q values
+                #next_q_values = self.target_net(next_states).max(1)[0]
+                next_actions = self.online_net(next_states).argmax(1)
+                next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
                 expected_q_values = (next_q_values * self.gamma) * (~dones) + rewards
+                td_error = torch.abs(current_q_values - expected_q_values).detach().cpu().numpy()
 
-                # Compute Huber loss
-                loss = F.smooth_l1_loss(current_q_values, expected_q_values)
+                # Compute loss with IS weights
+                loss = (weights * F.smooth_l1_loss(current_q_values, expected_q_values, reduction='none')).mean()
+                self.losses.append(loss.item())
+                
+                self.q_values.append(current_q_values.mean().item())
 
                 # Optimize the model
                 self.optimizer.zero_grad()
@@ -141,21 +200,61 @@ class AgentDQN:
                     param.grad.data.clamp_(-1, 1)
                 self.optimizer.step()
 
+                # Update priorities
+                self.memory.update_priorities(indices, td_error)
+
                 # Decay epsilon
                 self.epsilon = max(self.epsilon_min, self.epsilon - (self.epsilon_start - self.epsilon_min) / self.decay)
+            counter += 1
         # plot last graph
-        self.plot_rewards(episode_rewards, avg_rewards, self.time_str)
+        self.plot_rewards(self.episode_rewards, self.avg_rewards, self.time_str)
+        self.plot_loss(self.losses, self.time_str)
+        self.plot_q_values(self.q_values, self.time_str)
         # Save model
-        torch.save(self.online_net.state_dict(), self.model_path)
+        checkpoint = {
+            'online_net': self.online_net.state_dict(),
+            'target_net': self.target_net.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'rewards': self.episode_rewards,
+            'avg_rewards': self.avg_rewards,
+            'losses': self.losses,
+            'q_values': self.q_values,
+            'chart_time': self.time_str
+        }
+        torch.save(checkpoint, self.model_path)
+        print("Model saved to {self.model_path}")
 
     def plot_rewards(self, episode_rewards, avg_rewards, time_now_str):
         plt.figure(figsize=(10, 6))
-        plt.plot(episode_rewards, label='Episode Reward')
+        plt.plot(episode_rewards, label='Reward v Episode')
         plt.plot(avg_rewards, label='Average Reward (100 Episodes)', color='orange')
         plt.xlabel('Episode')
         plt.ylabel('Reward')
         plt.title('Reward vs. Episodes')
         plt.legend()
         plt.grid()
-        plt.savefig(GRAPH_PATH + 'training_' + time_now_str + '.png')
+        plt.savefig(GRAPH_PATH + 'reward_' + time_now_str + '.png')
+        plt.close()
+
+    def plot_loss(self, losses, time_now_str):
+        plt.figure(figsize=(10, 6))
+        plt.plot(losses, label='Loss v Training Steps', color='red')
+        plt.xlabel('Training Steps')
+        plt.ylabel('Loss')
+        plt.title('Loss vs. Training Steps')
+        plt.legend()
+        plt.grid()
+        plt.savefig(GRAPH_PATH + 'loss_' + time_now_str + '.png')
+        plt.close()
+
+    def plot_q_values(self, q_values, time_now_str):
+        plt.figure(figsize=(10, 6))
+        plt.plot(q_values, label='Q Value v Training Steps', color='green')
+        plt.xlabel('Training Steps')
+        plt.ylabel('Q Value')
+        plt.title('Q Value vs. Training Steps')
+        plt.legend()
+        plt.grid()
+        plt.savefig(GRAPH_PATH + 'q_values_' + time_now_str + '.png')
         plt.close()
