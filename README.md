@@ -14,7 +14,7 @@ Use `main.py --train` will train a model and save to the `./models/` directory u
 If you want to change the number of iterations, modify the MAX_ITER global value in `main.py`.
 
 ### Testing an existing model
-Use `main.py --test --model model_name.pth` to test a model.
+Use `main.py --test --model model_name.pth` to test a model. For PPO models use `main.py --test --model model_name` with no extension
 If you want to change the number of episodes to test with, modify the TEST_EPISODES global value in `main.py`
 
 ### Options

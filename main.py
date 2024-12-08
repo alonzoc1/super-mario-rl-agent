@@ -123,7 +123,7 @@ def train_ppo(env):
     )
 
     # Train the model
-    model.learn(total_timesteps=1_000_000, callback=checkpoint_callback)
+    model.learn(total_timesteps=5000000, callback=checkpoint_callback)
 
     # Save final model
     model.save("./models/ppo_super_mario_final")
