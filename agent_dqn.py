@@ -31,9 +31,9 @@ class AgentDQN:
         self.update_target_every = 10000
         
         # Replay buffer
-        # self.memory = deque(maxlen=self.replay_buffer_size)
+        self.memory = deque(maxlen=self.replay_buffer_size)
         # Try prioritized replay buffer
-        self.memory = prioritized_replay_buffer.PrioritizedReplayBuffer(self.replay_buffer_size)
+        # self.memory = prioritized_replay_buffer.PrioritizedReplayBuffer(self.replay_buffer_size)
         
         # Device
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -105,9 +105,8 @@ class AgentDQN:
         return action
 
     def push(self, state, action, reward, next_state, done):
-        self.memory.add((state, action, reward, next_state, done))
+        self.memory.append((state, action, reward, next_state, done))
     
-    '''
     def replay_buffer(self):
         if (len(self.memory) < self.train_start):
             return None
@@ -124,7 +123,7 @@ class AgentDQN:
 
         return states, actions, rewards, next_states, dones
     '''
-    
+    # Old prioritized replay buffer implementation
     def replay_buffer(self, beta=0.4):
         if len(self.memory.memory) < self.train_start:
             return None
@@ -139,6 +138,7 @@ class AgentDQN:
         weights = torch.FloatTensor(weights).to(self.device)
         
         return states, actions, rewards, next_states, dones, indices, weights
+    '''
 
     def train(self, iterations):
         state, _ = self.env.reset()
@@ -177,18 +177,15 @@ class AgentDQN:
                 if batch is None:
                     continue
 
-                states, actions, rewards, next_states, dones, indices, weights = batch
+                states, actions, rewards, next_states, dones = batch
 
                 # Compute TD error
                 current_q_values = self.online_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-                #next_q_values = self.target_net(next_states).max(1)[0]
-                next_actions = self.online_net(next_states).argmax(1)
-                next_q_values = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+                # Compute V(s_{t+1}) for all next states
+                next_q_values = self.target_net(next_states).max(1)[0]
                 expected_q_values = (next_q_values * self.gamma) * (~dones) + rewards
-                td_error = torch.abs(current_q_values - expected_q_values).detach().cpu().numpy()
 
-                # Compute loss with IS weights
-                loss = (weights * F.smooth_l1_loss(current_q_values, expected_q_values, reduction='none')).mean()
+                loss = F.smooth_l1_loss(current_q_values, expected_q_values, reduction='none').mean()
                 self.losses.append(loss.item())
                 
                 self.q_values.append(current_q_values.mean().item())
@@ -199,9 +196,6 @@ class AgentDQN:
                 for param in self.online_net.parameters():
                     param.grad.data.clamp_(-1, 1)
                 self.optimizer.step()
-
-                # Update priorities
-                self.memory.update_priorities(indices, td_error)
 
                 # Decay epsilon
                 self.epsilon = max(self.epsilon_min, self.epsilon - (self.epsilon_start - self.epsilon_min) / self.decay)
