@@ -20,7 +20,7 @@ class AgentDQN:
         
         # Set DQN parameters here
         self.learning_rate = .00025
-        self.gamma = .95
+        self.gamma = .90
         self.epsilon_start = 1.0
         self.epsilon = self.epsilon_start
         self.decay = .99999
