@@ -20,7 +20,7 @@ class AgentDQN:
         
         # Set DQN parameters here
         self.learning_rate = .00025
-        self.gamma = .9
+        self.gamma = .95
         self.epsilon_start = 1.0
         self.epsilon = self.epsilon_start
         self.decay = .99999
@@ -198,8 +198,23 @@ class AgentDQN:
                 self.optimizer.step()
 
                 # Decay epsilon
-                self.epsilon = max(self.epsilon_min, self.epsilon - (self.epsilon_start - self.epsilon_min) / self.decay)
+                self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
             counter += 1
+            if counter % 100000 == 0:
+                # Save a checkpoint
+                checkpoint = {
+                    'online_net': self.online_net.state_dict(),
+                    'target_net': self.target_net.state_dict(),
+                    'optimizer': self.optimizer.state_dict(),
+                    'epsilon': self.epsilon,
+                    'rewards': self.episode_rewards,
+                    'avg_rewards': self.avg_rewards,
+                    'losses': self.losses,
+                    'q_values': self.q_values,
+                    'chart_time': self.time_str
+                }
+                torch.save(checkpoint, self.model_path)
+        print("Model saved to {self.model_path}")
         # plot last graph
         self.plot_rewards(self.episode_rewards, self.avg_rewards, self.time_str)
         self.plot_loss(self.losses, self.time_str)

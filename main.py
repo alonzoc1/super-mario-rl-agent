@@ -17,7 +17,7 @@ import agent_dqn
 import joypad_ppo
 
 TEST_EPISODES = 10 # How many episodes to go through when testing
-MAX_ITER = 15000 # Max iterations when training
+MAX_ITER = 1000000 # Max iterations when training
 MODEL_PATH = './models/'
 VIDEO_PATH = './test_videos/'
 GRAPH_PATH = './graphs/'
