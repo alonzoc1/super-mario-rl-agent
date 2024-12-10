@@ -23,3 +23,6 @@ Models labeled "high_contrast" need to be run in high contrast mode for best eff
 When running main, you can pass the following options to activate certain features:
 - Pass `--display` to visualize the gameplay on screen as the model is trained/tested
 - Pass `--high_contrast` to train/test in high contrast mode.
+
+### Pre trained models:
+Download pre-trained models from [this link](https://drive.google.com/drive/folders/1yHWp3ArquET8U2CG6De0eD_veRkJHwHn?usp=sharing)
