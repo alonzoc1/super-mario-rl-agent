@@ -164,8 +164,6 @@ class AgentDQN:
         episode = 0
         looper = iterations
         counter = 0
-        high_scores = 0
-
         while(looper > 0):
             looper -= 1
             action = self.take_action(state, test=False)
@@ -180,21 +178,6 @@ class AgentDQN:
                 self.episode_rewards.append(score)
                 self.avg_rewards.append(np.mean(self.episode_rewards[-100:])) # avg last 100 episodes
                 print("Episode:", episode, "Score:", score, "Epsilon:", self.epsilon, "Iteration:", str(counter + 1), "out of", str(iterations))
-                if (score > 3000):
-                    checkpoint = {
-                        'online_net': self.online_net.state_dict(),
-                        'target_net': self.target_net.state_dict(),
-                        'optimizer': self.optimizer.state_dict(),
-                        'epsilon': self.epsilon,
-                        'rewards': self.episode_rewards,
-                        'avg_rewards': self.avg_rewards,
-                        'losses': self.losses,
-                        'q_values': self.q_values,
-                        'chart_time': self.time_str,
-                        'memory': list(self.memory)
-                    }
-                    torch.save(checkpoint, "./models/high_score_" + str(high_scores) + ".pth")
-                    high_scores += 1
                 state, _ = self.env.reset()
                 score = 0
                 if episode % 10 == 0: # update graph every 10
