@@ -33,15 +33,15 @@ class DuelingDQN(nn.Module):
             nn.Conv2d(32, 32, 3, 2, 1),
             nn.ReLU(),
             nn.Conv2d(32, 32, 3, 2, 1),
-            nn.ReLU
+            nn.ReLU()
         )
         # Value stream
         self.value_stream = nn.Sequential(
-            nn.Linear(512, 1)
+            nn.Linear(32 * 6 * 6, 1)
         )
         # Advantage stream
         self.advantage_stream = nn.Sequential(
-            nn.Linear(512, num_actions)
+            nn.Linear(32 * 6 * 6, num_actions)
         )
 
     def forward(self, x):
