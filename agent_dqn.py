@@ -47,10 +47,9 @@ class AgentDQN:
         # Optimizer
         self.optimizer = optim.Adam(self.online_net.parameters(), lr=self.learning_rate)
         
-        # Starting values for performance-based epsilon
-        self.rewards_window = deque(maxlen=100)  # Track recent rewards
-        self.best_performance = float('-inf')
-        
+        # Starting values for td-error based epsilon
+        self.epsilon_td_error_scaling_factor = .1
+
         if args.model is not None and continue_training:
             print("Loading existing model:", self.model_path)
             checkpoint = torch.load(model_path)
@@ -68,8 +67,8 @@ class AgentDQN:
             self.time_str = checkpoint.get('chart_time', self.time_str)
             
             # Load adaptive epsilon data
-            self.best_performance = checkpoint.get('best_performance', float('-inf'))
-            self.rewards_window = deque(checkpoint.get('reward_window', []), maxlen=100)
+            #self.best_performance = checkpoint.get('best_performance', float('-inf'))
+            #self.rewards_window = deque(checkpoint.get('reward_window', []), maxlen=100)
             print("Model loaded successfully!")
         else:
             # Initialize variables for graphing
@@ -151,7 +150,13 @@ class AgentDQN:
     
     def update_epsilon(self):
         # Implement epsilon decay here
-        self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
+        self.epsilon = max(self.epsilon * self.decay, self.epsilon_min) # normal linear
+    
+    def update_epsilon_td(self, td_error):
+        avg_td_error = td_error.mean().item()
+        normalized_error = avg_td_error / (avg_td_error + 1)
+        print("Normalized TD:", str(normalized_error))
+        self.epsilon = max(self.epsilon_min, self.epsilon_start - self.epsilon_td_error_scaling_factor * normalized_error)
 
     def train(self, iterations):
         state, _ = self.env.reset()
@@ -159,6 +164,7 @@ class AgentDQN:
         episode = 0
         looper = iterations
         counter = 0
+        high_scores = 0
 
         while(looper > 0):
             looper -= 1
@@ -173,9 +179,22 @@ class AgentDQN:
                 episode += 1
                 self.episode_rewards.append(score)
                 self.avg_rewards.append(np.mean(self.episode_rewards[-100:])) # avg last 100 episodes
-                self.rewards_window.append(score)
                 print("Episode:", episode, "Score:", score, "Epsilon:", self.epsilon, "Iteration:", str(counter + 1), "out of", str(iterations))
-                self.update_epsilon() # Performance based epsilon
+                if (score > 3000):
+                    checkpoint = {
+                        'online_net': self.online_net.state_dict(),
+                        'target_net': self.target_net.state_dict(),
+                        'optimizer': self.optimizer.state_dict(),
+                        'epsilon': self.epsilon,
+                        'rewards': self.episode_rewards,
+                        'avg_rewards': self.avg_rewards,
+                        'losses': self.losses,
+                        'q_values': self.q_values,
+                        'chart_time': self.time_str,
+                        'memory': list(self.memory)
+                    }
+                    torch.save(checkpoint, "./models/high_score_" + str(high_scores) + ".pth")
+                    high_scores += 1
                 state, _ = self.env.reset()
                 score = 0
                 if episode % 10 == 0: # update graph every 10
@@ -199,6 +218,8 @@ class AgentDQN:
                 # Compute V(s_{t+1}) for all next states
                 next_q_values = self.target_net(next_states).max(1)[0]
                 expected_q_values = (next_q_values * self.gamma) * (~dones) + rewards
+                #if terminated or truncated:
+                    #td_error = torch.abs(current_q_values - expected_q_values)
 
                 loss = F.smooth_l1_loss(current_q_values, expected_q_values, reduction='none').mean()
                 self.losses.append(loss.item())
@@ -214,7 +235,7 @@ class AgentDQN:
 
                 # Decay epsilon
                 ## (removed for non-linear approach)
-                #self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
+                self.update_epsilon() # Linear epsilon performed best
             counter += 1
             if counter % 100000 == 0:
                 # Save a checkpoint
@@ -228,8 +249,8 @@ class AgentDQN:
                     'losses': self.losses,
                     'q_values': self.q_values,
                     'chart_time': self.time_str,
-                    'reward_window': list(self.rewards_window),
-                    'best_performance': self.best_performance,
+                    #'reward_window': list(self.rewards_window),
+                    #'best_performance': self.best_performance,
                     'memory': list(self.memory)
                 }
                 torch.save(checkpoint, self.model_path)
@@ -249,8 +270,8 @@ class AgentDQN:
             'losses': self.losses,
             'q_values': self.q_values,
             'chart_time': self.time_str,
-            'reward_window': self.rewards_window,
-            'best_performance': self.best_performance
+            #'reward_window': self.rewards_window,
+            #'best_performance': self.best_performance
         }
         torch.save(checkpoint, self.model_path)
         print("Model saved to {self.model_path}")
