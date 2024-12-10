@@ -47,6 +47,10 @@ class AgentDQN:
         # Optimizer
         self.optimizer = optim.Adam(self.online_net.parameters(), lr=self.learning_rate)
         
+        # Starting values for performance-based epsilon
+        self.rewards_window = deque(maxlen=100)  # Track recent rewards
+        self.best_performance = float('-inf')
+        
         if args.model is not None and continue_training:
             print("Loading existing model:", self.model_path)
             checkpoint = torch.load(model_path)
@@ -54,6 +58,7 @@ class AgentDQN:
             self.target_net.load_state_dict(checkpoint['target_net'])
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.epsilon = checkpoint.get('epsilon', self.epsilon_start)
+            self.memory = deque(checkpoint.get('memory', []), maxlen=self.replay_buffer_size)
             
             # Load graphing data
             self.episode_rewards = checkpoint.get('rewards', [])
@@ -61,6 +66,10 @@ class AgentDQN:
             self.losses = checkpoint.get('losses', [])
             self.q_values = checkpoint.get('q_values', [])
             self.time_str = checkpoint.get('chart_time', self.time_str)
+            
+            # Load adaptive epsilon data
+            self.best_performance = checkpoint.get('best_performance', float('-inf'))
+            self.rewards_window = deque(checkpoint.get('reward_window', []), maxlen=100)
             print("Model loaded successfully!")
         else:
             # Initialize variables for graphing
@@ -76,7 +85,7 @@ class AgentDQN:
             self.target_net.load_state_dict(checkpoint['target_net'])
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.epsilon = checkpoint.get('epsilon', self.epsilon_start)
-            
+
             # Load graphing data
             self.episode_rewards = checkpoint.get('rewards', [])
             self.avg_rewards = checkpoint.get('avg_rewards', [])
@@ -139,6 +148,10 @@ class AgentDQN:
         
         return states, actions, rewards, next_states, dones, indices, weights
     '''
+    
+    def update_epsilon(self):
+        # Implement epsilon decay here
+        self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
 
     def train(self, iterations):
         state, _ = self.env.reset()
@@ -150,7 +163,7 @@ class AgentDQN:
         while(looper > 0):
             looper -= 1
             action = self.take_action(state, test=False)
-            print("Training iteration: " + str(counter + 1))
+            # print("Training iteration: " + str(counter + 1))
             next_state, reward, terminated, truncated, _ = self.env.step(action)
             score += reward
             self.push(state, action, reward, next_state, terminated or truncated)
@@ -160,7 +173,9 @@ class AgentDQN:
                 episode += 1
                 self.episode_rewards.append(score)
                 self.avg_rewards.append(np.mean(self.episode_rewards[-100:])) # avg last 100 episodes
-                print("Episode:", episode, "Score:", score, "Epsilon:", self.epsilon)
+                self.rewards_window.append(score)
+                print("Episode:", episode, "Score:", score, "Epsilon:", self.epsilon, "Iteration:", str(counter + 1), "out of", str(iterations))
+                self.update_epsilon() # Performance based epsilon
                 state, _ = self.env.reset()
                 score = 0
                 if episode % 10 == 0: # update graph every 10
@@ -198,7 +213,8 @@ class AgentDQN:
                 self.optimizer.step()
 
                 # Decay epsilon
-                self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
+                ## (removed for non-linear approach)
+                #self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
             counter += 1
             if counter % 100000 == 0:
                 # Save a checkpoint
@@ -211,7 +227,10 @@ class AgentDQN:
                     'avg_rewards': self.avg_rewards,
                     'losses': self.losses,
                     'q_values': self.q_values,
-                    'chart_time': self.time_str
+                    'chart_time': self.time_str,
+                    'reward_window': list(self.rewards_window),
+                    'best_performance': self.best_performance,
+                    'memory': list(self.memory)
                 }
                 torch.save(checkpoint, self.model_path)
         print("Model saved to {self.model_path}")
@@ -229,7 +248,9 @@ class AgentDQN:
             'avg_rewards': self.avg_rewards,
             'losses': self.losses,
             'q_values': self.q_values,
-            'chart_time': self.time_str
+            'chart_time': self.time_str,
+            'reward_window': self.rewards_window,
+            'best_performance': self.best_performance
         }
         torch.save(checkpoint, self.model_path)
         print("Model saved to {self.model_path}")

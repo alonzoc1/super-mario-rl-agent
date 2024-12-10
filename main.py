@@ -16,7 +16,7 @@ import frame_skipper
 import agent_dqn
 import joypad_ppo
 
-TEST_EPISODES = 10 # How many episodes to go through when testing
+TEST_EPISODES = 3 # How many episodes to go through when testing
 MAX_ITER = 1000000 # Max iterations when training
 MODEL_PATH = './models/'
 VIDEO_PATH = './test_videos/'
@@ -85,6 +85,9 @@ def test(args, env, video_path, agent, start_time):
 
             if args.record_video:
                 vid.capture_frame()
+            if args.display:
+                # Slow it down a bit to make it easier to see
+                time.sleep(.06)
 
         if truncated:
             break
