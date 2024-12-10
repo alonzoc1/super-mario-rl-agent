@@ -25,4 +25,5 @@ When running main, you can pass the following options to activate certain featur
 - Pass `--high_contrast` to train/test in high contrast mode.
 
 ### Pre trained models:
-Download pre-trained models from [this link](https://drive.google.com/drive/folders/1yHWp3ArquET8U2CG6De0eD_veRkJHwHn?usp=sharing)
+- Download pre-trained models from [this link](https://drive.google.com/drive/folders/1yHWp3ArquET8U2CG6De0eD_veRkJHwHn?usp=sharing)
+- Highest performing model is `dueling_dqn_2mil_high_contrast_high_score.pth`, which should be run in high contrast mode.
